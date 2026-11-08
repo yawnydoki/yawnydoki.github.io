@@ -234,6 +234,7 @@
       height: auto;
       min-width: 0;
       min-height: 0;
+      overflow: hidden;
       background: var(--face);
       padding: 3px;
       display: flex;
@@ -274,8 +275,58 @@
       font-weight: 700;
       background: linear-gradient(90deg, #808080, #b5b5b5);
       touch-action: none;
-      cursor: default;
+      cursor: move;
       user-select: none
+    }
+
+    .resize-grip {
+      position: absolute;
+      right: 3px;
+      bottom: 3px;
+      z-index: 30;
+      width: 15px;
+      height: 15px;
+      cursor: nwse-resize;
+      touch-action: none;
+      background: repeating-linear-gradient(135deg, transparent 0 3px, var(--sh) 3px 4px, var(--hi) 4px 5px)
+    }
+
+    .win.max .resize-grip {
+      display: none
+    }
+
+    .win.user-sized .body,
+    .win.snapped .body {
+      max-height: none;
+      flex: 1
+    }
+
+    .snap-preview {
+      position: fixed;
+      z-index: 8499;
+      display: none;
+      border: 3px dotted #fff;
+      background: rgba(16, 132, 208, .42);
+      box-shadow: inset 0 0 0 2px var(--navy);
+      pointer-events: none
+    }
+
+    .snap-preview.show {
+      display: block
+    }
+
+    .snap-preview.left {
+      inset: .55rem auto calc(2.7rem + env(safe-area-inset-bottom, 0px)) 0;
+      width: 50vw
+    }
+
+    .snap-preview.right {
+      inset: .55rem 0 calc(2.7rem + env(safe-area-inset-bottom, 0px)) auto;
+      width: 50vw
+    }
+
+    .snap-preview.top {
+      inset: 0 0 calc(2.7rem + env(safe-area-inset-bottom, 0px)) 0
     }
 
     .win.top .tb {
@@ -950,6 +1001,11 @@
         height: auto
       }
 
+      .resize-grip,
+      .snap-preview {
+        display: none !important
+      }
+
       .body {
         max-height: 20rem;
         flex: none
@@ -1135,6 +1191,8 @@
 
   </main>
 
+  <div class="snap-preview" id="snapPreview" aria-hidden="true"></div>
+
   <div class="sm out" id="sm">
     <button data-open="about">📄 About Me</button><button data-open="projects">📁 Projects</button><button
       data-open="skills">⚙️ Skills</button><button data-open="contact">✉️ Contact</button><button data-open="github">👾
@@ -1148,7 +1206,7 @@
       aria-label="Open Larrion uptime widget">
       <span aria-hidden="true">🔊</span><span id="clk"></span>
       <div class="tray-tip out" id="uptimeTip" role="tooltip">
-        <div class="tray-tip-title"><i class="online-dot" aria-hidden="true"></i><b>Larrion uptime</b></div>
+        <div class="tray-tip-title"></i><b>Larrion uptime</b></div>
         <div class="tray-tip-body"><output id="uptime">00:00:00</output><small>session online</small></div>
       </div>
     </div>
@@ -1157,7 +1215,7 @@
   <script>
     (function () {
       var $ = function (s, r) { return (r || document).querySelector(s) }, $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)) };
-      var wins = $$('.win'), tasks = $('#tasks'), sm = $('#sm'), z = 10, mob = matchMedia('(max-width:44rem)'), touch = matchMedia('(hover:none)'), btns = {};
+      var wins = $$('.win'), tasks = $('#tasks'), sm = $('#sm'), desk = $('#desk'), snapPreview = $('#snapPreview'), z = 10, mob = matchMedia('(max-width:44rem)'), touch = matchMedia('(hover:none)'), btns = {};
       var rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
       function syncMaxState() {
         document.body.classList.toggle('has-max', !!$('.win.max:not(.gone):not(.closed)'))
@@ -1193,6 +1251,31 @@
       }
       function min(w) { w.classList.add('gone'); w.classList.remove('top'); btns[w.id] && btns[w.id].classList.remove('act'); syncMaxState() }
       function close(w) { w.classList.remove('show', 'top'); w.classList.add('closed'); if (btns[w.id]) { btns[w.id].remove(); delete btns[w.id] } syncMaxState() }
+      function snapCandidate(e) {
+        var edge = 26;
+        if (e.clientY <= edge) return 'top';
+        if (e.clientX <= edge) return 'left';
+        if (e.clientX >= document.documentElement.clientWidth - edge) return 'right';
+        return ''
+      }
+      function previewSnap(side) { snapPreview.className = 'snap-preview' + (side ? ' show ' + side : '') }
+      function applySnap(w, side) {
+        var r = w.getBoundingClientRect(), half = Math.floor(desk.clientWidth / 2);
+        if (!w.classList.contains('snapped')) w.dataset.restoreSize = JSON.stringify({ width: r.width, height: r.height, sized: w.classList.contains('user-sized') });
+        w.classList.add('snapped', 'user-sized'); w.dataset.snap = side;
+        w.style.left = (side === 'right' ? half : 0) + 'px'; w.style.top = '0px';
+        w.style.right = 'auto'; w.style.bottom = 'auto';
+        w.style.width = (side === 'right' ? desk.clientWidth - half : half) + 'px'; w.style.height = desk.clientHeight + 'px'
+      }
+      function releaseSnap(w, e) {
+        if (!w.classList.contains('snapped')) return;
+        var saved = JSON.parse(w.dataset.restoreSize || '{}'), dr = desk.getBoundingClientRect();
+        w.classList.remove('snapped'); delete w.dataset.snap; delete w.dataset.restoreSize;
+        w.classList.toggle('user-sized', !!saved.sized);
+        w.style.width = (saved.width || 360) + 'px'; w.style.height = saved.sized ? (saved.height || 220) + 'px' : 'auto';
+        w.style.left = Math.max(0, Math.min(e.clientX - dr.left - (saved.width || 360) / 2, desk.clientWidth - 80)) + 'px';
+        w.style.top = Math.max(0, e.clientY - dr.top - 10) + 'px'; w.style.right = 'auto'; w.style.bottom = 'auto'
+      }
       wins.forEach(function (w) {
         w.addEventListener('pointerdown', function () { focus(w) });
         $$('.tb button', w).forEach(function (b) {
@@ -1202,24 +1285,58 @@
           }
         });
         $('.tb', w).addEventListener('dblclick', function () { toggleMax(w) });
+        // resize
+        var grip = document.createElement('span'), resizing = false, resizeX, resizeY, resizeW, resizeH, resizeMaxW, resizeMaxH;
+        grip.className = 'resize-grip'; grip.setAttribute('aria-hidden', 'true'); w.appendChild(grip);
+        grip.addEventListener('pointerdown', function (e) {
+          if (mob.matches || w.classList.contains('max')) return;
+          e.stopPropagation(); focus(w);
+          if (w.classList.contains('snapped')) { w.classList.remove('snapped'); delete w.dataset.snap; delete w.dataset.restoreSize }
+          var r = w.getBoundingClientRect(), dr = desk.getBoundingClientRect();
+          resizing = true; resizeX = e.clientX; resizeY = e.clientY; resizeW = r.width; resizeH = r.height;
+          resizeMaxW = Math.max(240, dr.right - r.left); resizeMaxH = Math.max(140, dr.bottom - r.top);
+          w.classList.add('user-sized'); w.style.width = resizeW + 'px'; w.style.height = resizeH + 'px';
+          grip.setPointerCapture(e.pointerId); w.style.transition = 'none'; e.preventDefault()
+        });
+        grip.addEventListener('pointermove', function (e) {
+          if (!resizing) return;
+          w.style.width = Math.max(240, Math.min(resizeMaxW, resizeW + e.clientX - resizeX)) + 'px';
+          w.style.height = Math.max(140, Math.min(resizeMaxH, resizeH + e.clientY - resizeY)) + 'px'
+        });
+        function endResize() { if (resizing) { resizing = false; w.style.transition = '' } }
+        grip.addEventListener('pointerup', endResize); grip.addEventListener('pointercancel', endResize);
         // drag
-        var tb = $('.tb', w), ox, oy, drag = false;
+        var tb = $('.tb', w), ox, oy, drag = false, dragMoved = false, dragStartX, dragStartY;
         tb.addEventListener('pointerdown', function (e) {
           if (mob.matches || w.classList.contains('max') || e.target.tagName === 'BUTTON') return;
-          var startLeft = w.offsetLeft, startTop = w.offsetTop;
-          drag = true; ox = e.pageX - startLeft; oy = e.pageY - startTop;
-          w.style.left = startLeft + 'px'; w.style.top = startTop + 'px';
-          w.style.right = 'auto'; w.style.bottom = 'auto';
+          drag = true; dragMoved = false; dragStartX = e.clientX; dragStartY = e.clientY;
           tb.setPointerCapture(e.pointerId); w.style.transition = 'none';
         });
         tb.addEventListener('pointermove', function (e) {
           if (!drag) return;
-          w.style.left = Math.max(0, Math.min(e.pageX - ox, document.documentElement.clientWidth - 80)) + 'px';
-          w.style.top = Math.max(0, e.pageY - oy) + 'px'
+          if (!dragMoved && Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY) < 5) return;
+          if (!dragMoved) {
+            dragMoved = true; releaseSnap(w, e);
+            var startLeft = w.offsetLeft, startTop = w.offsetTop, startDesk = desk.getBoundingClientRect();
+            ox = e.clientX - startDesk.left - startLeft; oy = e.clientY - startDesk.top - startTop;
+            w.style.left = startLeft + 'px'; w.style.top = startTop + 'px';
+            w.style.right = 'auto'; w.style.bottom = 'auto'
+          }
+          var dr = desk.getBoundingClientRect();
+          w.style.left = Math.max(0, Math.min(e.clientX - dr.left - ox, desk.clientWidth - 80)) + 'px';
+          w.style.top = Math.max(0, e.clientY - dr.top - oy) + 'px'; previewSnap(snapCandidate(e))
         });
-        function end() { if (drag) { drag = false; w.style.transition = '' } }
-        tb.addEventListener('pointerup', end); tb.addEventListener('pointercancel', end);
+        function end(e, cancelled) {
+          if (!drag) return;
+          drag = false; w.style.transition = ''; previewSnap('');
+          if (cancelled || !dragMoved) return;
+          var side = snapCandidate(e);
+          if (side === 'top') toggleMax(w); else if (side) applySnap(w, side)
+        }
+        tb.addEventListener('pointerup', function (e) { end(e, false) });
+        tb.addEventListener('pointercancel', function (e) { end(e, true) });
       });
+      addEventListener('resize', function () { if (!mob.matches) wins.forEach(function (w) { if (w.classList.contains('snapped')) applySnap(w, w.dataset.snap) }) });
       // reveal on scroll: windows pop in as they enter view
       var io = new IntersectionObserver(function (en) {
         en.forEach(function (x) {
