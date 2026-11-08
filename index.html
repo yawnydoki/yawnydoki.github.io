@@ -731,10 +731,82 @@
     }
 
     .tray {
+      position: relative;
       padding: 0 .8rem;
       display: flex;
       align-items: center;
-      gap: .5rem
+      gap: .5rem;
+      cursor: help;
+      user-select: none
+    }
+
+    .tray-tip {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + .65rem);
+      width: 13.5rem;
+      padding: 3px;
+      background: var(--face);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(5px);
+      pointer-events: none;
+      transition: opacity .12s ease, transform .12s ease, visibility .12s
+    }
+
+    .tray:hover .tray-tip,
+    .tray:focus .tray-tip,
+    .tray.open .tray-tip {
+      opacity: 1;
+      visibility: visible;
+      transform: none
+    }
+
+    .tray-tip::after {
+      content: "";
+      position: absolute;
+      right: 1.3rem;
+      bottom: -6px;
+      width: 10px;
+      height: 10px;
+      background: var(--face);
+      border-right: 1px solid var(--dk);
+      border-bottom: 1px solid var(--dk);
+      transform: rotate(45deg)
+    }
+
+    .tray-tip-title {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .25rem .4rem;
+      color: #fff;
+      background: linear-gradient(90deg, var(--navy), var(--navy2))
+    }
+
+    .online-dot {
+      width: .55rem;
+      height: .55rem;
+      border: 1px solid #003800;
+      border-radius: 50%;
+      background: #32cd32;
+      box-shadow: 0 0 0 1px #fff
+    }
+
+    .tray-tip-body {
+      padding: .55rem .5rem .45rem;
+      background: #fff
+    }
+
+    .tray-tip-body output {
+      display: block;
+      margin-bottom: .1rem;
+      font: 700 1.25rem/1.2 "Courier New", monospace;
+      letter-spacing: .04em
+    }
+
+    .tray-tip-body small {
+      color: #555
     }
 
     .start {
@@ -1072,7 +1144,14 @@
   <div class="task">
     <button class="start out" id="start">🪟 Start</button>
     <div class="tasks" id="tasks"></div>
-    <div class="tray in"><span aria-hidden="true">🔊</span><span id="clk"></span></div>
+    <div class="tray in" id="tray" tabindex="0" role="button" aria-expanded="false" aria-controls="uptimeTip"
+      aria-label="Open Larrion uptime widget">
+      <span aria-hidden="true">🔊</span><span id="clk"></span>
+      <div class="tray-tip out" id="uptimeTip" role="tooltip">
+        <div class="tray-tip-title"><i class="online-dot" aria-hidden="true"></i><b>Larrion uptime</b></div>
+        <div class="tray-tip-body"><output id="uptime">00:00:00</output><small>session online</small></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1164,6 +1243,19 @@
       // clock
       function tick() { $('#clk').textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
       tick(); setInterval(tick, 15000);
+      var tray = $('#tray'), uptimeStarted = performance.now();
+      function updateUptime() {
+        var total = Math.floor((performance.now() - uptimeStarted) / 1000), h = Math.floor(total / 3600), m = Math.floor(total % 3600 / 60), s = total % 60;
+        $('#uptime').textContent = [h, m, s].map(function (n) { return String(n).padStart(2, '0') }).join(':')
+      }
+      function setTray(opened) { tray.classList.toggle('open', opened); tray.setAttribute('aria-expanded', opened ? 'true' : 'false') }
+      tray.addEventListener('click', function (e) { e.stopPropagation(); setTray(!tray.classList.contains('open')) });
+      tray.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTray(!tray.classList.contains('open')) }
+        if (e.key === 'Escape') { setTray(false); tray.blur() }
+      });
+      document.addEventListener('click', function () { setTray(false) });
+      updateUptime(); setInterval(updateUptime, 1000);
       // profile display
       var profilePhoto = $('#profilePhoto'), portraitFrame = profilePhoto.parentElement;
       function portraitReady() { portraitFrame.classList.toggle('loaded', profilePhoto.complete && profilePhoto.naturalWidth > 0) }
